@@ -7,23 +7,32 @@ import resources from './locales/index.js';
 import initView from './view.js';
 import parseRss from './parser.js';
 
-const routes = {
-  proxyPath: (url) => `https://allorigins.hexlet.app/get?disableCache=true&url=${encodeURIComponent(url)}`,
-};
-
-const rssValidateSchema = (feeds) => {
-  yup.setLocale({
-    string: {
-      url: () => ({ key: 'error.validation.url' }),
-    },
-    mixed: {
-      notOneOf: () => ({ key: 'error.validation.notOneOf' }),
-      required: () => ({ key: 'error.validation.required' }),
-    },
+function createProxyUrl(originalUrl) {
+  const apiUrl = new URL('https://allorigins.hexlet.app/get');
+  const params = new URLSearchParams({
+    disableCache: 'true',
+    url: originalUrl,
   });
 
-  return yup.string().required().url().notOneOf(feeds);
+  apiUrl.search = params.toString();
+  return apiUrl.toString();
+}
+
+const routes = {
+  proxyPath: (url) => createProxyUrl(url),
 };
+
+yup.setLocale({
+  string: {
+    url: () => ({ key: 'error.validation.url' }),
+  },
+  mixed: {
+    notOneOf: () => ({ key: 'error.validation.notOneOf' }),
+    required: () => ({ key: 'error.validation.required' }),
+  },
+});
+
+const rssValidateSchema = (feeds) => yup.string().required().url().notOneOf(feeds);
 
 const setIdsForRssData = (rssData) => {
   const { feed, items } = rssData;

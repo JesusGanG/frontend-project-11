@@ -1,6 +1,6 @@
 const renderError = (error, i18n, elements) => {
   const { feedbackContainer, input } = elements;
-  feedbackContainer.innerHTML = '';
+  feedbackContainer.innerTEXT = '';
   feedbackContainer.classList.add('text-danger');
   feedbackContainer.classList.remove('text-success');
 
