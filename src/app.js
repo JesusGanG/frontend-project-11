@@ -114,73 +114,76 @@ export default () => {
 
   const watchedState = onChange(state, initView(elements, state, i18n));
 
-  elements.form.addEventListener('submit', async (e) => {
+  elements.form.addEventListener('submit', (e) => {
     e.preventDefault();
     watchedState.form.processState = 'sending';
 
-    try {
-      const formData = new FormData(e.target);
-      const inputValue = formData.get('url').trim();
+    const formData = new FormData(e.target);
+    const inputValue = formData.get('url').trim();
 
-      const link = await rssValidateSchema(watchedState.validLinks).validate(inputValue);
+    rssValidateSchema(watchedState.validLinks)
+      .validate(inputValue)
+      .then((link) => {
+        watchedState.form.error = null;
+        watchedState.form.valid = true;
+        return link;
+      })
+      .then((validLink) => {
+        watchedState.form.processState = 'sending';
+        return axios.get(createProxyUrl(validLink));
+      })
+      .then((response) => {
+        if (response.status !== 200) {
+          throw new Error(`networkError: ${response.status}`);
+        }
+        const rssData = parseRss(response.data.contents);
+        if (!rssData) {
+          throw new Error('parseError');
+        } else {
+          const { feed, items } = setIdsForRssData(rssData);
+          watchedState.data.feeds.unshift(feed);
+          watchedState.data.posts.unshift(...items);
+          watchedState.form.processState = 'success';
 
-      watchedState.form.error = null;
-      watchedState.form.valid = true;
+          watchedState.validLinks.push(inputValue);
+        }
+      })
+      .catch((error) => {
+        switch (error.name) {
+          case 'ValidationError':
+            watchedState.form.error = error.message;
+            break;
+          case 'Error':
+            watchedState.form.error = { [error.message]: `error.${error.message}` };
+            break;
+          case 'AxiosError':
+            watchedState.form.error = { [error.name]: `error.${error.name}` };
+            break;
+          default:
+            watchedState.form.error = { unknown: 'error.unknown' };
+        }
 
-      watchedState.form.processState = 'sending';
-      const response = await axios.get(createProxyUrl(link));
+        watchedState.form.processState = 'error';
+        watchedState.form.valid = false;
+      });
 
-      if (response.status !== 200) {
-        throw new Error(`networkError: ${response.status}`);
+    elements.modal.addEventListener('show.bs.modal', (event) => {
+      const button = event.relatedTarget;
+      const currentPostId = button.dataset.id;
+      const currentPost = watchedState.data.posts.find((post) => post.id === currentPostId);
+
+      watchedState.uiState.currentPost = currentPost;
+      if (!watchedState.uiState.readPostsId.includes(currentPostId)) {
+        watchedState.uiState.readPostsId.push(currentPostId);
       }
+      watchedState.uiState.modal = 'modalOpen';
+    });
 
-      const rssData = parseRss(response.data.contents);
-      if (!rssData) {
-        throw new Error('parseError');
-      } else {
-        const { feed, items } = setIdsForRssData(rssData);
-        watchedState.data.feeds.unshift(feed);
-        watchedState.data.posts.unshift(...items);
-        watchedState.form.processState = 'success';
+    elements.modal.addEventListener('hidden.bs.modal', () => {
+      watchedState.uiState.currentPost = null;
+      watchedState.uiState.modal = 'modalClose';
+    });
 
-        watchedState.validLinks.push(inputValue);
-      }
-    } catch (error) {
-      switch (error.name) {
-        case 'ValidationError':
-          watchedState.form.error = error.message;
-          break;
-        case 'Error':
-          watchedState.form.error = { [error.message]: `error.${error.message}` };
-          break;
-        case 'AxiosError':
-          watchedState.form.error = { [error.name]: `error.${error.name}` };
-          break;
-        default:
-          watchedState.form.error = { unknown: 'error.unknown' };
-      }
-
-      watchedState.form.processState = 'error';
-      watchedState.form.valid = false;
-    }
+    updateData(watchedState);
   });
-
-  elements.modal.addEventListener('show.bs.modal', (e) => {
-    const button = e.relatedTarget;
-    const currentPostId = button.dataset.id;
-    const currentPost = watchedState.data.posts.find((post) => post.id === currentPostId);
-
-    watchedState.uiState.currentPost = currentPost;
-    if (!watchedState.uiState.readPostsId.includes(currentPostId)) {
-      watchedState.uiState.readPostsId.push(currentPostId);
-    }
-    watchedState.uiState.modal = 'modalOpen';
-  });
-
-  elements.modal.addEventListener('hidden.bs.modal', () => {
-    watchedState.uiState.currentPost = null;
-    watchedState.uiState.modal = 'modalClose';
-  });
-
-  updateData(watchedState);
 };
