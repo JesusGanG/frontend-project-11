@@ -7,28 +7,23 @@ import resources from './locales/index.js';
 import initView from './view.js';
 import parseRss from './parser.js';
 
-function createProxyUrl(originalUrl) {
-  const apiUrl = new URL('https://allorigins.hexlet.app/get');
-  const params = new URLSearchParams({
-    disableCache: 'true',
-    url: originalUrl,
+const routes = {
+  proxyPath: (url) => `https://allorigins.hexlet.app/get?disableCache=true&url=${encodeURIComponent(url)}`,
+};
+
+const rssValidateSchema = (feeds) => {
+  yup.setLocale({
+    string: {
+      url: () => ({ key: 'error.validation.url' }),
+    },
+    mixed: {
+      notOneOf: () => ({ key: 'error.validation.notOneOf' }),
+      required: () => ({ key: 'error.validation.required' }),
+    },
   });
 
-  apiUrl.search = params.toString();
-  return apiUrl.toString();
-}
-
-yup.setLocale({
-  string: {
-    url: () => ({ key: 'error.validation.url' }),
-  },
-  mixed: {
-    notOneOf: () => ({ key: 'error.validation.notOneOf' }),
-    required: () => ({ key: 'error.validation.required' }),
-  },
-});
-
-const rssValidateSchema = (feeds) => yup.string().required().url().notOneOf(feeds);
+  return yup.string().required().url().notOneOf(feeds);
+};
 
 const setIdsForRssData = (rssData) => {
   const { feed, items } = rssData;
@@ -45,9 +40,16 @@ const updateData = (watchedState) => {
   watchedState.form.processState = 'filling';
   const { validLinks } = watchedState;
 
+  if (validLinks.length <= 0) {
+    setTimeout(() => {
+      updateData(watchedState);
+    }, interval);
+    return;
+  }
+
   const { posts } = watchedState.data;
 
-  const promises = validLinks.map((link) => axios.get(createProxyUrl(link)));
+  const promises = validLinks.map((link) => axios.get(routes.proxyPath(link)));
 
   Promise.all(promises)
     .then((responses) => {
@@ -130,7 +132,7 @@ export default () => {
       })
       .then((validLink) => {
         watchedState.form.processState = 'sending';
-        return axios.get(createProxyUrl(validLink));
+        return axios.get(routes.proxyPath(validLink));
       })
       .then((response) => {
         if (response.status !== 200) {
@@ -166,24 +168,24 @@ export default () => {
         watchedState.form.processState = 'error';
         watchedState.form.valid = false;
       });
-
-    elements.modal.addEventListener('show.bs.modal', (event) => {
-      const button = event.relatedTarget;
-      const currentPostId = button.dataset.id;
-      const currentPost = watchedState.data.posts.find((post) => post.id === currentPostId);
-
-      watchedState.uiState.currentPost = currentPost;
-      if (!watchedState.uiState.readPostsId.includes(currentPostId)) {
-        watchedState.uiState.readPostsId.push(currentPostId);
-      }
-      watchedState.uiState.modal = 'modalOpen';
-    });
-
-    elements.modal.addEventListener('hidden.bs.modal', () => {
-      watchedState.uiState.currentPost = null;
-      watchedState.uiState.modal = 'modalClose';
-    });
-
-    updateData(watchedState);
   });
+
+  elements.modal.addEventListener('show.bs.modal', (e) => {
+    const button = e.relatedTarget;
+    const currentPostId = button.dataset.id;
+    const currentPost = watchedState.data.posts.find((post) => post.id === currentPostId);
+
+    watchedState.uiState.currentPost = currentPost;
+    if (!watchedState.uiState.readPostsId.includes(currentPostId)) {
+      watchedState.uiState.readPostsId.push(currentPostId);
+    }
+    watchedState.uiState.modal = 'modalOpen';
+  });
+
+  elements.modal.addEventListener('hidden.bs.modal', () => {
+    watchedState.uiState.currentPost = null;
+    watchedState.uiState.modal = 'modalClose';
+  });
+
+  updateData(watchedState);
 };

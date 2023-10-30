@@ -5,7 +5,7 @@ export default (stringHtml) => {
   const errorNode = doc.querySelector('parsererror');
 
   if (errorNode) {
-    throw new Error('Ошибка при разборе XML');
+    return false;
   }
 
   const titleEl = channel.querySelector('title');
