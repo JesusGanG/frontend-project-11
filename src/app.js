@@ -18,10 +18,6 @@ function createProxyUrl(originalUrl) {
   return apiUrl.toString();
 }
 
-const routes = {
-  proxyPath: (url) => createProxyUrl(url),
-};
-
 yup.setLocale({
   string: {
     url: () => ({ key: 'error.validation.url' }),
@@ -49,16 +45,9 @@ const updateData = (watchedState) => {
   watchedState.form.processState = 'filling';
   const { validLinks } = watchedState;
 
-  if (validLinks.length <= 0) {
-    setTimeout(() => {
-      updateData(watchedState);
-    }, interval);
-    return;
-  }
-
   const { posts } = watchedState.data;
 
-  const promises = validLinks.map((link) => axios.get(routes.proxyPath(link)));
+  const promises = validLinks.map((link) => axios.get(createProxyUrl(link)));
 
   Promise.all(promises)
     .then((responses) => {
@@ -125,58 +114,55 @@ export default () => {
 
   const watchedState = onChange(state, initView(elements, state, i18n));
 
-  elements.form.addEventListener('submit', (e) => {
+  elements.form.addEventListener('submit', async (e) => {
     e.preventDefault();
     watchedState.form.processState = 'sending';
 
-    const formData = new FormData(e.target);
-    const inputValue = formData.get('url').trim();
+    try {
+      const formData = new FormData(e.target);
+      const inputValue = formData.get('url').trim();
 
-    rssValidateSchema(watchedState.validLinks)
-      .validate(inputValue)
-      .then((link) => {
-        watchedState.form.error = null;
-        watchedState.form.valid = true;
-        return link;
-      })
-      .then((validLink) => {
-        watchedState.form.processState = 'sending';
-        return axios.get(routes.proxyPath(validLink));
-      })
-      .then((response) => {
-        if (response.status !== 200) {
-          throw new Error(`networkError: ${response.status}`);
-        }
-        const rssData = parseRss(response.data.contents);
-        if (!rssData) {
-          throw new Error('parseError');
-        } else {
-          const { feed, items } = setIdsForRssData(rssData);
-          watchedState.data.feeds.unshift(feed);
-          watchedState.data.posts.unshift(...items);
-          watchedState.form.processState = 'success';
+      const link = await rssValidateSchema(watchedState.validLinks).validate(inputValue);
 
-          watchedState.validLinks.push(inputValue);
-        }
-      })
-      .catch((error) => {
-        switch (error.name) {
-          case 'ValidationError':
-            watchedState.form.error = error.message;
-            break;
-          case 'Error':
-            watchedState.form.error = { [error.message]: `error.${error.message}` };
-            break;
-          case 'AxiosError':
-            watchedState.form.error = { [error.name]: `error.${error.name}` };
-            break;
-          default:
-            watchedState.form.error = { unknown: 'error.unknown' };
-        }
+      watchedState.form.error = null;
+      watchedState.form.valid = true;
 
-        watchedState.form.processState = 'error';
-        watchedState.form.valid = false;
-      });
+      watchedState.form.processState = 'sending';
+      const response = await axios.get(createProxyUrl(link));
+
+      if (response.status !== 200) {
+        throw new Error(`networkError: ${response.status}`);
+      }
+
+      const rssData = parseRss(response.data.contents);
+      if (!rssData) {
+        throw new Error('parseError');
+      } else {
+        const { feed, items } = setIdsForRssData(rssData);
+        watchedState.data.feeds.unshift(feed);
+        watchedState.data.posts.unshift(...items);
+        watchedState.form.processState = 'success';
+
+        watchedState.validLinks.push(inputValue);
+      }
+    } catch (error) {
+      switch (error.name) {
+        case 'ValidationError':
+          watchedState.form.error = error.message;
+          break;
+        case 'Error':
+          watchedState.form.error = { [error.message]: `error.${error.message}` };
+          break;
+        case 'AxiosError':
+          watchedState.form.error = { [error.name]: `error.${error.name}` };
+          break;
+        default:
+          watchedState.form.error = { unknown: 'error.unknown' };
+      }
+
+      watchedState.form.processState = 'error';
+      watchedState.form.valid = false;
+    }
   });
 
   elements.modal.addEventListener('show.bs.modal', (e) => {
